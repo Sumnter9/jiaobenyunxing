@@ -44,7 +44,7 @@
 准备好上述依赖后：
 
 ```bash
-git clone https://github.com/enterx-x/xiancun.git
+git clone https://github.com/Sumnter9/jiaobenyunxing.git xiancun
 cd xiancun
 mkdir -p "$HOME/bin"
 install -m 755 xiancun "$HOME/bin/xiancun"
