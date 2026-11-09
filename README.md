@@ -31,6 +31,16 @@
 
 ## 安装与使用
 
+### 在当前开发机的 VS Code 中运行
+
+用 VS Code 打开本仓库目录 `/root/workspace/xiancun`，执行“终端 -> 运行任务”，选择 `xiancun: 运行 GPU 保活`。任务使用当前机器的 `/usr/bin/python3`（已安装 CUDA 版 PyTorch），在 VS Code 终端运行仓库中的 `xiancun`，配置为最多 1 张空闲 GPU、每卡 1 GiB 张量显存，持续计算。运行期间保留任务终端；停止任务或关闭终端会释放 GPU。此入口不依赖 Supervisor。
+
+约 30–60 秒后运行 `xiancun: 查看状态`；看到 `computing` 和最近计算心跳，才表示实际开始计算。也可在终端执行 `nvidia-smi` 查看显存和利用率。停止前台任务时，在任务终端按 Ctrl+C 或使用 VS Code 的“终止任务”；`xiancun: 查看日志` 可排查启动失败。显存大小和卡数可在 `.vscode/tasks.json` 的运行参数中调整，改完后重新运行任务。
+
+**当前 Codex 沙箱的 GPU 不可用**：`nvidia-smi` 无法连接驱动，且没有 `/dev/nvidia*`，因此这里无法实测 GPU 占用。前台任务会在启动时检查 GPU，不可用时直接报错退出。请在 VS Code 自身的终端先运行 `nvidia-smi`；若同样失败，需要平台恢复 GPU 设备和驱动。脚本不能保证阻止平台的空闲关机策略或强制回收。
+
+### 命令行安装
+
 准备好上述依赖后：
 
 ```bash

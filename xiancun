@@ -471,7 +471,7 @@ def config_from_args(args):
 
 def show_status():
     enabled = (STATE / "enabled").exists()
-    print("自动监测：" + ("已启用" if enabled else "已禁用"))
+    print("后台自启动：" + ("已启用" if enabled else "已禁用"))
     if (STATE / "supervisord.conf").exists():
         result = supervisorctl("status", "xiancun")
         print((result.stdout + result.stderr).strip())
@@ -513,11 +513,13 @@ def main():
     parser = argparse.ArgumentParser(description="按 GPU 实际利用率判断空闲；驻留 CUDA 进程不阻止计算。")
     commands = parser.add_subparsers(dest="command", required=True)
     start = commands.add_parser("start", help="启用自动监测及自启动（可重复执行）")
-    start.add_argument("memory_gib", nargs="?", type=float)
-    start.add_argument("rotation_hours", nargs="?", type=float)
-    start.add_argument("--interval", type=float)
-    start.add_argument("--idle-seconds", type=float)
-    start.add_argument("--gpu-count", type=int)
+    run = commands.add_parser("run", help="在当前终端持续监测，不依赖 Supervisor")
+    for command in (start, run):
+        command.add_argument("memory_gib", nargs="?", type=float)
+        command.add_argument("rotation_hours", nargs="?", type=float)
+        command.add_argument("--interval", type=float)
+        command.add_argument("--idle-seconds", type=float)
+        command.add_argument("--gpu-count", type=int)
     commands.add_parser("ensure", help="自启动入口，仅在已启用时恢复服务")
     commands.add_parser("status", help="显示监测和真实计算心跳")
     commands.add_parser("log", help="查看监测、工作进程及服务日志")
@@ -535,6 +537,21 @@ def main():
                 print("".join((STATE / name).read_text(errors="replace").splitlines(True)[-30:]), end="")
             except FileNotFoundError:
                 pass
+        return
+    if args.command == "run":
+        config = config_from_args(args)
+        try:
+            snapshot()
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            raise RuntimeError("GPU 不可用；请先在当前终端确认 nvidia-smi 正常") from error
+        handler = RotatingFileHandler(STATE / "monitor.log", maxBytes=5 * 1024 * 1024, backupCount=2)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        LOG.addHandler(handler)
+        LOG.addHandler(logging.StreamHandler(sys.stdout))
+        LOG.setLevel(logging.INFO)
+        with lock("monitor.lock", blocking=False):
+            atomic_json(STATE / "config.json", config)
+            Monitor(config).run()
         return
     with lock("control.lock"):
         if args.command == "start":
