@@ -8,7 +8,7 @@
       "args": ["run", "1", "24", "--gpu-count", "1"],
       "options": {
         "cwd": "${workspaceFolder}",
-        "env": { "XIANCUN_PYTHON": "/usr/bin/python3" }
+        "env": { "XIANCUN_PYTHON": "${command:python.interpreterPath}" }
       },
       "problemMatcher": [],
       "isBackground": true

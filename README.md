@@ -20,11 +20,11 @@
 
 ## 环境要求
 
-本仓库保存实际部署的版本，默认路径与原开发机环境一致：
+本仓库保存可在新开发机配置后运行的版本：
 
 - Linux、`/proc`、Python 3.10 或更新版本；调度器默认使用 `/usr/bin/python3`。
 - NVIDIA GPU、可工作的驱动和 `nvidia-smi`。
-- 支持当前 GPU 的 CUDA 版 PyTorch。工作进程默认使用 `~/miniforge/envs/gpu-keepalive/bin/python`，可通过 `XIANCUN_PYTHON` 指定现有环境。
+- 支持当前 GPU 的 CUDA 版 PyTorch。工作进程默认使用启动监测器的 Python，也可通过 `XIANCUN_PYTHON` 指定已安装 PyTorch 的解释器。
 - Supervisor。脚本中的 `SUPERVISORD`、`SUPERVISORCTL` 默认分别为 `/etc/aibox/bin/supervisord` 和 `/etc/aibox/bin/supervisorctl`。其他 Linux 环境请先把这两个常量改为本机 `command -v supervisord`、`command -v supervisorctl` 的结果。
 
 监测器本身只使用 Python 标准库。PyTorch 只在 GPU 工作进程中导入；驱动暂时不可用时，监测会保留并重试。
@@ -33,29 +33,66 @@
 
 ### 在当前开发机的 VS Code 中运行
 
-用 VS Code 打开本仓库目录 `/root/workspace/xiancun`，执行“终端 -> 运行任务”，选择 `xiancun: 运行 GPU 保活`。任务使用当前机器的 `/usr/bin/python3`（已安装 CUDA 版 PyTorch），在 VS Code 终端运行仓库中的 `xiancun`，配置为最多 1 张空闲 GPU、每卡 1 GiB 张量显存，持续计算。运行期间保留任务终端；停止任务或关闭终端会释放 GPU。此入口不依赖 Supervisor。
+用 VS Code 打开本仓库目录，先在 Python 扩展中选择已安装 CUDA 版 PyTorch 的解释器，再执行“终端 -> 运行任务”，选择 `xiancun: 运行 GPU 保活`。任务会使用 VS Code 当前选择的解释器，在 VS Code 终端运行仓库中的 `xiancun`，配置为最多 1 张空闲 GPU、每卡 1 GiB 张量显存，持续计算。运行期间保留任务终端；停止任务或关闭终端会释放 GPU。此入口不依赖 Supervisor。
 
 约 30–60 秒后运行 `xiancun: 查看状态`；看到 `computing` 和最近计算心跳，才表示实际开始计算。也可在终端执行 `nvidia-smi` 查看显存和利用率。停止前台任务时，在任务终端按 Ctrl+C 或使用 VS Code 的“终止任务”；`xiancun: 查看日志` 可排查启动失败。显存大小和卡数可在 `.vscode/tasks.json` 的运行参数中调整，改完后重新运行任务。
 
 **当前 Codex 沙箱的 GPU 不可用**：`nvidia-smi` 无法连接驱动，且没有 `/dev/nvidia*`，因此这里无法实测 GPU 占用。前台任务会在启动时检查 GPU，不可用时直接报错退出。请在 VS Code 自身的终端先运行 `nvidia-smi`；若同样失败，需要平台恢复 GPU 设备和驱动。脚本不能保证阻止平台的空闲关机策略或强制回收。
 
-### 命令行安装
+### 新开发机命令行安装
 
-准备好上述依赖后：
+先确认驱动正常：
+
+```bash
+nvidia-smi
+```
+
+然后创建独立 Python 环境：
 
 ```bash
 git clone https://github.com/Sumnter9/jiaobenyunxing.git xiancun
 cd xiancun
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+```
+
+根据新机器的驱动和 CUDA 版本，在 [PyTorch 官方安装页面](https://pytorch.org/get-started/locally/) 选择 Linux、Pip、Python 和对应 CUDA 版本，执行页面生成的安装命令。例如 CUDA 11.8：
+
+```bash
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+验证 PyTorch 使用的是 GPU：
+
+```bash
+python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+```
+
+安装完成后，前台启动监测：
+
+```bash
+export XIANCUN_PYTHON="$VIRTUAL_ENV/bin/python"
+./xiancun run 1 24 --gpu-count 1
+```
+
+如果不使用虚拟环境，也必须把 `XIANCUN_PYTHON` 指向实际安装了 CUDA 版 PyTorch 的 Python。不要直接使用原开发机的 `~/miniforge/envs/gpu-keepalive/bin/python` 路径。
+
+### 后台运行
+
+在上面的虚拟环境中：
+
+```bash
 mkdir -p "$HOME/bin"
 install -m 755 xiancun "$HOME/bin/xiancun"
 export PATH="$HOME/bin:$PATH"
-
-# 若使用默认 Python 环境：
-xiancun start
-
-# 或指定已经安装 CUDA 版 PyTorch 的解释器（首次 start 时保存到配置）：
-# XIANCUN_PYTHON=/path/to/environment/bin/python xiancun start
+export XIANCUN_PYTHON="$VIRTUAL_ENV/bin/python"
+nohup env XIANCUN_PYTHON="$XIANCUN_PYTHON" \
+  xiancun run 1 24 --gpu-count 1 \
+  > "$HOME/.cache/xiancun/nohup.log" 2>&1 < /dev/null &
 ```
+
+上面的 `run` 模式不依赖 Supervisor，关闭 SSH 或终端后仍会继续运行；机器重启后需要重新启动。需要 Supervisor 后台恢复时，先按本机实际路径配置 `SUPERVISORD` 和 `SUPERVISORCTL`，再使用 `xiancun start`。
 
 ```bash
 xiancun status       # 监测状态、等待原因、逐卡计算心跳

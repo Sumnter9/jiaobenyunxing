@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 """空闲 GPU 自动计算；监督进程不依赖 CUDA/PyTorch 初始化。"""
 import argparse
 import contextlib
@@ -25,7 +25,8 @@ DEFAULTS = {
     "memory_gib": 5.0, "rotation_hours": 24.0,
     "interval": 30.0, "idle_seconds": 30.0, "gpu_count": 2,
     "util_threshold": 0, "heartbeat_timeout": 120.0,
-    "python": str(Path.home() / "miniforge/envs/gpu-keepalive/bin/python"),
+    # 默认跟随启动监测器的 Python；部署到新机器时不依赖原开发机路径。
+    "python": sys.executable,
 }
 LOG = logging.getLogger("xiancun")
 
